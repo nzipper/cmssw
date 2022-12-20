@@ -48,6 +48,27 @@ OuterTrackerMonitorTTCluster = DQMEDAnalyzer('OuterTrackerMonitorTTCluster',
         xmin = cms.double(0)
         ),
 
+# Cluster nearest distance distribution
+    TH1TTCluster_Nearest = cms.PSet(
+        Nbinsx = cms.int32(1000),
+        xmax = cms.double(10),
+        xmin = cms.double(0)
+        ),
+
+# Cluster PS nearest distance distribution
+    TH1TTCluster_Nearest_PS = cms.PSet(
+        Nbinsx = cms.int32(1000),
+        xmax = cms.double(5),
+        xmin = cms.double(0)
+        ),
+
+# Cluster 2S nearest distance distribution
+    TH1TTCluster_Nearest_2S = cms.PSet(
+        Nbinsx = cms.int32(1111),
+        xmax = cms.double(5),
+        xmin = cms.double(0)
+        ),
+
 # Cluster Width vs. I/O sensor
     TH2TTCluster_Width = cms.PSet(
         Nbinsx = cms.int32(7),
@@ -68,6 +89,23 @@ OuterTrackerMonitorTTCluster = DQMEDAnalyzer('OuterTrackerMonitorTTCluster',
         ymin = cms.double(-120)
         ),
 
+# TTCluster forward/backward endcap local y vs x
+    TH2TTCluster_Local_Position = cms.PSet(
+        Nbinsx = cms.int32(1000),
+        xmax = cms.double(5),
+        xmin = cms.double(-5),
+        Nbinsy = cms.int32(1000),
+        ymax = cms.double(5),
+        ymin = cms.double(-5)
+        ),
+
+# TTCluster 2S local x
+    TH2TTCluster_Local_2S_Position = cms.PSet(
+        Nbinsx = cms.int32(1000),
+        xmax = cms.double(5),
+        xmin = cms.double(-5),
+        ),
+
 #TTCluster #rho vs z
     TH2TTCluster_RZ = cms.PSet(
         Nbinsx = cms.int32(900),
@@ -76,5 +114,14 @@ OuterTrackerMonitorTTCluster = DQMEDAnalyzer('OuterTrackerMonitorTTCluster',
         Nbinsy = cms.int32(900),
         ymax = cms.double(120),
         ymin = cms.double(0)
+        ),
+#TTCluster Pixel y position vs width
+    TTCluster_YvWidth_Pixel = cms.PSet(
+        Nbinsx = cms.int32(1000),
+        xmax = cms.double(5),
+        xmin = cms.double(-5),
+        Nbinsy = cms.int32(7),
+        ymax = cms.double(6.5),
+        ymin = cms.double(-0.5),
         ),
 )

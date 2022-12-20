@@ -20,6 +20,7 @@
 #include <memory>
 #include <numeric>
 #include <vector>
+#include <cmath>
 
 // user include files
 #include "FWCore/Framework/interface/ESHandle.h"
@@ -65,14 +66,32 @@ public:
   MonitorElement *Cluster_OMem_Endcap_Ring_Fw[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
   MonitorElement *Cluster_OMem_Endcap_Ring_Bw[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
   MonitorElement *Cluster_W = nullptr;
+  MonitorElement *Cluster_IMem_W = nullptr;
+  MonitorElement *Cluster_OMem_W = nullptr;
   MonitorElement *Cluster_Phi = nullptr;
   MonitorElement *Cluster_R = nullptr;
   MonitorElement *Cluster_Eta = nullptr;
+  MonitorElement *Cluster_Nearest = nullptr;
+  MonitorElement *Cluster_Nearest_PS = nullptr;
+  MonitorElement *Cluster_Nearest_2S = nullptr;
 
   MonitorElement *Cluster_Barrel_XY = nullptr;
   MonitorElement *Cluster_Endcap_Fw_XY = nullptr;
   MonitorElement *Cluster_Endcap_Bw_XY = nullptr;
+  MonitorElement *Cluster_Barrel_Local_PS_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Fw_Local_PS_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Bw_Local_PS_XY = nullptr;
+  MonitorElement *Cluster_Barrel_Local_2S_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Fw_Local_2S_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Bw_Local_2S_XY = nullptr;
+  MonitorElement *Cluster_Barrel_Local_Pixel_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Fw_Local_Pixel_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Bw_Local_Pixel_XY = nullptr;
+  MonitorElement *Cluster_Barrel_Local_Strip_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Fw_Local_Strip_XY = nullptr;
+  MonitorElement *Cluster_Endcap_Bw_Local_Strip_XY = nullptr;
   MonitorElement *Cluster_RZ = nullptr;
+  MonitorElement *Cluster_YvWidth_Pixel = nullptr;
 
 private:
   edm::ParameterSet conf_;
@@ -118,6 +137,7 @@ void OuterTrackerMonitorTTCluster::analyze(const edm::Event &iEvent, const edm::
   /// Loop over the input Clusters
   typename edmNew::DetSetVector<TTCluster<Ref_Phase2TrackerDigi_>>::const_iterator inputIter;
   typename edmNew::DetSet<TTCluster<Ref_Phase2TrackerDigi_>>::const_iterator contentIter;
+  typename edmNew::DetSet<TTCluster<Ref_Phase2TrackerDigi_>>::const_iterator contentIter2;
 
   // Adding protection
   if (!Phase2TrackerDigiTTClusterHandle.isValid())
@@ -136,17 +156,71 @@ void OuterTrackerMonitorTTCluster::analyze(const edm::Event &iEvent, const edm::
 
       MeasurementPoint mp = tempCluRef->findAverageLocalCoordinates();
       const GeomDet *theGeomDet = tkGeom_->idToDet(detIdClu);
+      LocalPoint posCluLocal = theGeomDet->topology().localPosition(mp);
       Global3DPoint posClu = theGeomDet->surface().toGlobal(theGeomDet->topology().localPosition(mp));
+
+      // PS (=0) or 2S (=1)
+      unsigned int typeClu = 0;
+      if (detIdClu.subdetId() == static_cast<int>(StripSubdetector::TOB))
+      {
+        unsigned int barrel_layer = tTopo_->layer(detIdClu);
+        if (barrel_layer==4 || barrel_layer==5 || barrel_layer==6) typeClu=1;
+      }
+      else if (detIdClu.subdetId() == static_cast<int>(StripSubdetector::TID))
+      { 
+        unsigned int endcap_disk = tTopo_->layer(detIdClu);
+        unsigned int endcap_ring = tTopo_->tidRing(detIdClu);
+        if (endcap_disk<=2) {
+          if (endcap_ring>10) typeClu=1;
+        }
+        else if (endcap_disk>2) {
+          if (endcap_ring>7) typeClu=1;
+        }
+      }
 
       double r = posClu.perp();
       double z = posClu.z();
 
       Cluster_W->Fill(widClu, memberClu);
+      if (memberClu == 0) {
+        Cluster_IMem_W->Fill(widClu);
+      } else {
+        Cluster_OMem_W->Fill(widClu);
+      }
+
       Cluster_Eta->Fill(posClu.eta());
       Cluster_Phi->Fill(posClu.phi());
       Cluster_R->Fill(r);
       Cluster_RZ->Fill(z, r);
 
+      // Iterate over other clusters to calculate closest distance
+      double d_nearest = 9999.0;
+      for (contentIter2 = inputIter->begin(); contentIter2 != inputIter->end(); ++contentIter2) {
+        if (contentIter==contentIter2) continue;
+
+        // Make reference cluster 2
+        edm::Ref<edmNew::DetSetVector<TTCluster<Ref_Phase2TrackerDigi_>>, TTCluster<Ref_Phase2TrackerDigi_>> tempCluRef2 =
+            edmNew::makeRefTo(Phase2TrackerDigiTTClusterHandle, contentIter2);
+
+        unsigned int memberClu2 = tempCluRef2->getStackMember();
+        DetId detIdClu2 = tkGeom_->idToDet(tempCluRef2->getDetId())->geographicalId();
+        MeasurementPoint mp2 = tempCluRef2->findAverageLocalCoordinates();
+        const GeomDet *theGeomDet2 = tkGeom_->idToDet(detIdClu2);
+        Global3DPoint posClu2 = theGeomDet2->surface().toGlobal(theGeomDet2->topology().localPosition(mp2));
+
+
+        if (detIdClu==detIdClu2 && memberClu==memberClu2) {
+          double d = abs(posClu.x()-posClu2.x()) + abs(posClu.y()-posClu2.y()) + abs(posClu.z()-posClu2.z());
+          if (d < d_nearest) d_nearest = d;
+        }
+      }
+
+      Cluster_Nearest->Fill(d_nearest);
+      if (typeClu)
+        Cluster_Nearest_2S->Fill(d_nearest);
+      else
+        Cluster_Nearest_PS->Fill(d_nearest);
+        
       if (detIdClu.subdetId() == static_cast<int>(StripSubdetector::TOB))  // Phase 2 Outer Tracker Barrel
       {
         if (memberClu == 0)
@@ -156,6 +230,19 @@ void OuterTrackerMonitorTTCluster::analyze(const edm::Event &iEvent, const edm::
 
         Cluster_Barrel_XY->Fill(posClu.x(), posClu.y());
 
+        if (typeClu) {
+          Cluster_Barrel_Local_2S_XY->Fill(posCluLocal.x());
+        }
+        else {
+          Cluster_Barrel_Local_PS_XY->Fill(posCluLocal.x(), posCluLocal.y());
+          if (memberClu == 0) {
+            Cluster_Barrel_Local_Pixel_XY->Fill(posCluLocal.x(), posCluLocal.y());
+            Cluster_YvWidth_Pixel->Fill(posCluLocal.y(), widClu);
+          }
+          else {
+            Cluster_Barrel_Local_Strip_XY->Fill(posCluLocal.x());
+          }
+        }
       }                                                                         // end if isBarrel
       else if (detIdClu.subdetId() == static_cast<int>(StripSubdetector::TID))  // Phase 2 Outer Tracker Endcap
       {
@@ -169,18 +256,47 @@ void OuterTrackerMonitorTTCluster::analyze(const edm::Event &iEvent, const edm::
 
         if (posClu.z() > 0) {
           Cluster_Endcap_Fw_XY->Fill(posClu.x(), posClu.y());
+
+          if (typeClu) {
+            Cluster_Endcap_Fw_Local_2S_XY->Fill(posCluLocal.x());
+          }
+          else {
+            Cluster_Endcap_Fw_Local_PS_XY->Fill(posCluLocal.x(), posCluLocal.y());
+            if (memberClu == 0) {
+              Cluster_Endcap_Fw_Local_Pixel_XY->Fill(posCluLocal.x(), posCluLocal.y());
+              Cluster_YvWidth_Pixel->Fill(posCluLocal.y(), widClu);
+            }
+            else{
+              Cluster_Endcap_Fw_Local_Strip_XY->Fill(posCluLocal.x());
+            }
+          }
+
           if (memberClu == 0)
             Cluster_IMem_Endcap_Ring_Fw[tTopo_->layer(detIdClu) - 1]->Fill(tTopo_->tidRing(detIdClu));
           else
             Cluster_OMem_Endcap_Ring_Fw[tTopo_->layer(detIdClu) - 1]->Fill(tTopo_->tidRing(detIdClu));
         } else {
           Cluster_Endcap_Bw_XY->Fill(posClu.x(), posClu.y());
+
+          if (typeClu) {
+            Cluster_Endcap_Bw_Local_2S_XY->Fill(posCluLocal.x());
+          }
+          else {
+            Cluster_Endcap_Bw_Local_PS_XY->Fill(posCluLocal.x(), posCluLocal.y());
+            if (memberClu == 0) {
+              Cluster_Endcap_Bw_Local_Pixel_XY->Fill(posCluLocal.x(), posCluLocal.y());
+              Cluster_YvWidth_Pixel->Fill(posCluLocal.y(), widClu);
+            }
+            else {
+              Cluster_Endcap_Bw_Local_Strip_XY->Fill(posCluLocal.x());
+            }
+          }
+
           if (memberClu == 0)
             Cluster_IMem_Endcap_Ring_Bw[tTopo_->layer(detIdClu) - 1]->Fill(tTopo_->tidRing(detIdClu));
           else
             Cluster_OMem_Endcap_Ring_Bw[tTopo_->layer(detIdClu) - 1]->Fill(tTopo_->tidRing(detIdClu));
         }
-
       }  // end if isEndcap
     }    // end loop contentIter
   }      // end loop inputIter
@@ -314,6 +430,24 @@ void OuterTrackerMonitorTTCluster::bookHistograms(DQMStore::IBooker &iBooker,
   Cluster_W->setAxisTitle("L1 Cluster Width", 1);
   Cluster_W->setAxisTitle("Stack Member", 2);
 
+  HistoName = "Cluster_IMem_W";
+  Cluster_IMem_W = iBooker.book1D(HistoName,
+                             HistoName,
+                             psTTClusterWidth.getParameter<int32_t>("Nbinsx"),
+                             psTTClusterWidth.getParameter<double>("xmin"),
+                             psTTClusterWidth.getParameter<double>("xmax"));
+  Cluster_IMem_W->setAxisTitle("L1 Cluster Width", 1);
+  Cluster_IMem_W->setAxisTitle("# L1 Clusters", 2);
+
+  HistoName = "Cluster_OMem_W";
+  Cluster_OMem_W = iBooker.book1D(HistoName,
+                             HistoName,
+                             psTTClusterWidth.getParameter<int32_t>("Nbinsx"),
+                             psTTClusterWidth.getParameter<double>("xmin"),
+                             psTTClusterWidth.getParameter<double>("xmax"));
+  Cluster_OMem_W->setAxisTitle("L1 Cluster Width", 1);
+  Cluster_OMem_W->setAxisTitle("# L1 Clusters", 2);
+
   // Cluster eta distribution
   edm::ParameterSet psTTClusterEta = conf_.getParameter<edm::ParameterSet>("TH1TTCluster_Eta");
   HistoName = "Cluster_Eta";
@@ -346,6 +480,39 @@ void OuterTrackerMonitorTTCluster::bookHistograms(DQMStore::IBooker &iBooker,
                              psTTClusterR.getParameter<double>("xmax"));
   Cluster_R->setAxisTitle("R [cm]", 1);
   Cluster_R->setAxisTitle("# L1 Clusters", 2);
+
+  // Cluster nearest distance distribution
+  edm::ParameterSet psTTClusterNearest = conf_.getParameter<edm::ParameterSet>("TH1TTCluster_Nearest");
+  HistoName = "Cluster_Nearest";
+  Cluster_Nearest = iBooker.book1D(HistoName,
+                             HistoName,
+                             psTTClusterNearest.getParameter<int32_t>("Nbinsx"),
+                             psTTClusterNearest.getParameter<double>("xmin"),
+                             psTTClusterNearest.getParameter<double>("xmax"));
+  Cluster_Nearest->setAxisTitle("Cluster Distance [cm]", 1);
+  Cluster_Nearest->setAxisTitle("# L1 Clusters", 2);
+
+  // PS Cluster nearest distance distribution
+  edm::ParameterSet psTTClusterNearest_PS = conf_.getParameter<edm::ParameterSet>("TH1TTCluster_Nearest_PS");
+  HistoName = "Cluster_Nearest_PS";
+  Cluster_Nearest_PS = iBooker.book1D(HistoName,
+                             HistoName,
+                             psTTClusterNearest_PS.getParameter<int32_t>("Nbinsx"),
+                             psTTClusterNearest_PS.getParameter<double>("xmin"),
+                             psTTClusterNearest_PS.getParameter<double>("xmax"));
+  Cluster_Nearest_PS->setAxisTitle("PS Cluster Distance [cm]", 1);
+  Cluster_Nearest_PS->setAxisTitle("# L1 Clusters", 2);
+
+  // 2S Cluster nearest distance distribution
+  edm::ParameterSet psTTClusterNearest_2S = conf_.getParameter<edm::ParameterSet>("TH1TTCluster_Nearest_2S");
+  HistoName = "Cluster_Nearest_2S";
+  Cluster_Nearest_2S = iBooker.book1D(HistoName,
+                             HistoName,
+                             psTTClusterNearest_2S.getParameter<int32_t>("Nbinsx"),
+                             psTTClusterNearest_2S.getParameter<double>("xmin"),
+                             psTTClusterNearest_2S.getParameter<double>("xmax"));
+  Cluster_Nearest_2S->setAxisTitle("2S Cluster Distance [cm]", 1);
+  Cluster_Nearest_2S->setAxisTitle("# L1 Clusters", 2);
 
   iBooker.setCurrentFolder(topFolderName_ + "/Clusters/Position");
 
@@ -389,6 +556,144 @@ void OuterTrackerMonitorTTCluster::bookHistograms(DQMStore::IBooker &iBooker,
   Cluster_Endcap_Bw_XY->setAxisTitle("L1 Cluster Backward Endcap position x [cm]", 1);
   Cluster_Endcap_Bw_XY->setAxisTitle("L1 Cluster Backward Endcap position y [cm]", 2);
 
+  edm::ParameterSet psTTCluster_Barrel_Local_PS_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_Position");
+  HistoName = "Cluster_Barrel_Local_PS_XY";
+  Cluster_Barrel_Local_PS_XY = iBooker.book2D(HistoName,
+                                     HistoName,
+                                     psTTCluster_Barrel_Local_PS_XY.getParameter<int32_t>("Nbinsx"),
+                                     psTTCluster_Barrel_Local_PS_XY.getParameter<double>("xmin"),
+                                     psTTCluster_Barrel_Local_PS_XY.getParameter<double>("xmax"),
+                                     psTTCluster_Barrel_Local_PS_XY.getParameter<int32_t>("Nbinsy"),
+                                     psTTCluster_Barrel_Local_PS_XY.getParameter<double>("ymin"),
+                                     psTTCluster_Barrel_Local_PS_XY.getParameter<double>("ymax"));
+  Cluster_Barrel_Local_PS_XY->setAxisTitle("L1 PS Cluster Barrel local position x [cm]", 1);
+  Cluster_Barrel_Local_PS_XY->setAxisTitle("L1 PS Cluster Barrel local position y [cm]", 2);
+
+  edm::ParameterSet psTTCluster_Barrel_Local_2S_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_2S_Position");
+  HistoName = "Cluster_Barrel_Local_2S_XY";
+  Cluster_Barrel_Local_2S_XY = iBooker.book1D(HistoName,
+                                     HistoName,
+                                     psTTCluster_Barrel_Local_2S_XY.getParameter<int32_t>("Nbinsx"),
+                                     psTTCluster_Barrel_Local_2S_XY.getParameter<double>("xmin"),
+                                     psTTCluster_Barrel_Local_2S_XY.getParameter<double>("xmax"));
+  Cluster_Barrel_Local_2S_XY->setAxisTitle("L1 2S Cluster Barrel local position x [cm]", 1);
+  Cluster_Barrel_Local_2S_XY->setAxisTitle("# L1 2S Clusters", 2);
+
+  edm::ParameterSet psTTCluster_Barrel_Local_Pixel_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_Position");
+  HistoName = "Cluster_Barrel_Local_Pixel_XY";
+  Cluster_Barrel_Local_Pixel_XY = iBooker.book2D(HistoName,
+                                     HistoName,
+                                     psTTCluster_Barrel_Local_Pixel_XY.getParameter<int32_t>("Nbinsx"),
+                                     psTTCluster_Barrel_Local_Pixel_XY.getParameter<double>("xmin"),
+                                     psTTCluster_Barrel_Local_Pixel_XY.getParameter<double>("xmax"),
+                                     psTTCluster_Barrel_Local_Pixel_XY.getParameter<int32_t>("Nbinsy"),
+                                     psTTCluster_Barrel_Local_Pixel_XY.getParameter<double>("ymin"),
+                                     psTTCluster_Barrel_Local_Pixel_XY.getParameter<double>("ymax"));
+  Cluster_Barrel_Local_Pixel_XY->setAxisTitle("L1 Pixel Cluster Barrel local position x [cm]", 1);
+  Cluster_Barrel_Local_Pixel_XY->setAxisTitle("L1 Pixel Cluster Barrel local position y [cm]", 2);
+
+  edm::ParameterSet psTTCluster_Barrel_Local_Strip_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_2S_Position");
+  HistoName = "Cluster_Barrel_Local_Strip_XY";
+  Cluster_Barrel_Local_Strip_XY = iBooker.book1D(HistoName,
+                                     HistoName,
+                                     psTTCluster_Barrel_Local_Strip_XY.getParameter<int32_t>("Nbinsx"),
+                                     psTTCluster_Barrel_Local_Strip_XY.getParameter<double>("xmin"),
+                                     psTTCluster_Barrel_Local_Strip_XY.getParameter<double>("xmax"));
+  Cluster_Barrel_Local_Strip_XY->setAxisTitle("L1 Strip Cluster Barrel local position x [cm]", 1);
+  Cluster_Barrel_Local_Strip_XY->setAxisTitle("# L1 Strip Clusters", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Fw_Local_PS_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_Position");
+  HistoName = "Cluster_Endcap_Fw_Local_PS_XY";
+  Cluster_Endcap_Fw_Local_PS_XY = iBooker.book2D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Fw_Local_PS_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Fw_Local_PS_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Fw_Local_PS_XY.getParameter<double>("xmax"),
+                                        psTTCluster_Endcap_Fw_Local_PS_XY.getParameter<int32_t>("Nbinsy"),
+                                        psTTCluster_Endcap_Fw_Local_PS_XY.getParameter<double>("ymin"),
+                                        psTTCluster_Endcap_Fw_Local_PS_XY.getParameter<double>("ymax"));
+  Cluster_Endcap_Fw_Local_PS_XY->setAxisTitle("L1 PS Cluster Forward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Fw_Local_PS_XY->setAxisTitle("L1 PS Cluster Forward Endcap local position y [cm]", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Fw_Local_2S_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_2S_Position");
+  HistoName = "Cluster_Endcap_Fw_Local_2S_XY";
+  Cluster_Endcap_Fw_Local_2S_XY = iBooker.book1D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Fw_Local_2S_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Fw_Local_2S_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Fw_Local_2S_XY.getParameter<double>("xmax"));
+  Cluster_Endcap_Fw_Local_2S_XY->setAxisTitle("L1 2S Cluster Forward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Fw_Local_2S_XY->setAxisTitle("# L1 2S Clusters", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Fw_Local_Pixel_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_Position");
+  HistoName = "Cluster_Endcap_Fw_Local_Pixel_XY";
+  Cluster_Endcap_Fw_Local_Pixel_XY = iBooker.book2D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Fw_Local_Pixel_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Fw_Local_Pixel_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Fw_Local_Pixel_XY.getParameter<double>("xmax"),
+                                        psTTCluster_Endcap_Fw_Local_Pixel_XY.getParameter<int32_t>("Nbinsy"),
+                                        psTTCluster_Endcap_Fw_Local_Pixel_XY.getParameter<double>("ymin"),
+                                        psTTCluster_Endcap_Fw_Local_Pixel_XY.getParameter<double>("ymax"));
+  Cluster_Endcap_Fw_Local_Pixel_XY->setAxisTitle("L1 Pixel Cluster Forward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Fw_Local_Pixel_XY->setAxisTitle("L1 Pixel Cluster Forward Endcap local position y [cm]", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Fw_Local_Strip_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_2S_Position");
+  HistoName = "Cluster_Endcap_Fw_Local_Strip_XY";
+  Cluster_Endcap_Fw_Local_Strip_XY = iBooker.book1D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Fw_Local_Strip_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Fw_Local_Strip_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Fw_Local_Strip_XY.getParameter<double>("xmax"));
+  Cluster_Endcap_Fw_Local_Strip_XY->setAxisTitle("L1 Strip Cluster Forward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Fw_Local_Strip_XY->setAxisTitle("# L1 Strip Clusters", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Bw_Local_PS_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_Position");
+  HistoName = "Cluster_Endcap_Bw_Local_PS_XY";
+  Cluster_Endcap_Bw_Local_PS_XY = iBooker.book2D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Bw_Local_PS_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Bw_Local_PS_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Bw_Local_PS_XY.getParameter<double>("xmax"),
+                                        psTTCluster_Endcap_Bw_Local_PS_XY.getParameter<int32_t>("Nbinsy"),
+                                        psTTCluster_Endcap_Bw_Local_PS_XY.getParameter<double>("ymin"),
+                                        psTTCluster_Endcap_Bw_Local_PS_XY.getParameter<double>("ymax"));
+  Cluster_Endcap_Bw_Local_PS_XY->setAxisTitle("L1 PS Cluster Backward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Bw_Local_PS_XY->setAxisTitle("L1 PS Cluster Backward Endcap local position y [cm]", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Bw_Local_2S_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_2S_Position");
+  HistoName = "Cluster_Endcap_Bw_Local_2S_XY";
+  Cluster_Endcap_Bw_Local_2S_XY = iBooker.book1D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Bw_Local_2S_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Bw_Local_2S_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Bw_Local_2S_XY.getParameter<double>("xmax"));
+  Cluster_Endcap_Bw_Local_2S_XY->setAxisTitle("L1 2S Cluster Backward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Bw_Local_2S_XY->setAxisTitle("# L1 2S Clusters", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Bw_Local_Pixel_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_Position");
+  HistoName = "Cluster_Endcap_Bw_Local_Pixel_XY";
+  Cluster_Endcap_Bw_Local_Pixel_XY = iBooker.book2D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Bw_Local_Pixel_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Bw_Local_Pixel_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Bw_Local_Pixel_XY.getParameter<double>("xmax"),
+                                        psTTCluster_Endcap_Bw_Local_Pixel_XY.getParameter<int32_t>("Nbinsy"),
+                                        psTTCluster_Endcap_Bw_Local_Pixel_XY.getParameter<double>("ymin"),
+                                        psTTCluster_Endcap_Bw_Local_Pixel_XY.getParameter<double>("ymax"));
+  Cluster_Endcap_Bw_Local_Pixel_XY->setAxisTitle("L1 Pixel Cluster Backward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Bw_Local_Pixel_XY->setAxisTitle("L1 Pixel Cluster Backward Endcap local position y [cm]", 2);
+
+  edm::ParameterSet psTTCluster_Endcap_Bw_Local_Strip_XY = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_Local_2S_Position");
+  HistoName = "Cluster_Endcap_Bw_Local_Strip_XY";
+  Cluster_Endcap_Bw_Local_Strip_XY = iBooker.book1D(HistoName,
+                                        HistoName,
+                                        psTTCluster_Endcap_Bw_Local_Strip_XY.getParameter<int32_t>("Nbinsx"),
+                                        psTTCluster_Endcap_Bw_Local_Strip_XY.getParameter<double>("xmin"),
+                                        psTTCluster_Endcap_Bw_Local_Strip_XY.getParameter<double>("xmax"));
+  Cluster_Endcap_Bw_Local_Strip_XY->setAxisTitle("L1 Strip Cluster Backward Endcap local position x [cm]", 1);
+  Cluster_Endcap_Bw_Local_Strip_XY->setAxisTitle("# L1 Strip Clusters", 2);
+
   // TTCluster #rho vs. z
   edm::ParameterSet psTTCluster_RZ = conf_.getParameter<edm::ParameterSet>("TH2TTCluster_RZ");
   HistoName = "Cluster_RZ";
@@ -402,6 +707,20 @@ void OuterTrackerMonitorTTCluster::bookHistograms(DQMStore::IBooker &iBooker,
                               psTTCluster_RZ.getParameter<double>("ymax"));
   Cluster_RZ->setAxisTitle("L1 Cluster position z [cm]", 1);
   Cluster_RZ->setAxisTitle("L1 Cluster position #rho [cm]", 2);
+
+  // TTCluster Pixel y pos vs. width
+  edm::ParameterSet psTTCluster_YvWidth_Pixel = conf_.getParameter<edm::ParameterSet>("TTCluster_YvWidth_Pixel");
+  HistoName = "Cluster_YvWidth_Pixel";
+  Cluster_YvWidth_Pixel = iBooker.book2D(HistoName,
+                              HistoName,
+                              psTTCluster_YvWidth_Pixel.getParameter<int32_t>("Nbinsx"),
+                              psTTCluster_YvWidth_Pixel.getParameter<double>("xmin"),
+                              psTTCluster_YvWidth_Pixel.getParameter<double>("xmax"),
+                              psTTCluster_YvWidth_Pixel.getParameter<int32_t>("Nbinsy"),
+                              psTTCluster_YvWidth_Pixel.getParameter<double>("ymin"),
+                              psTTCluster_YvWidth_Pixel.getParameter<double>("ymax"));
+  Cluster_YvWidth_Pixel->setAxisTitle("L1 Cluster position y [cm]", 1);
+  Cluster_YvWidth_Pixel->setAxisTitle("L1 Cluster width", 2);
 
 }  // end of method
 
